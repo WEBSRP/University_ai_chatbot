@@ -6,3 +6,7 @@ __pycache__/
 knowledge/page_*.json
 knowledge/index.json
 knowledge/summary_report.json
+.env.local
+.next/
+node_modules/
+*.tsbuildinfo
