@@ -76,6 +76,7 @@ export async function searchKnowledge(
 export async function searchKnowledgeDocuments(
   query: string,
   limit = DEFAULT_LIMIT,
+  categoryFilter?: string,
 ): Promise<SearchDocumentResult[]> {
   const queryTokens = tokenize(query);
 
@@ -87,8 +88,15 @@ export async function searchKnowledgeDocuments(
   const normalizedQuery = normalizeText(query);
   const resultLimit = clampLimit(limit);
 
+  console.log(`[Search] Query: "${query}", Category Filter: ${categoryFilter || "None"}`);
+
   const scoredResults = index.documents
     .map((document) => {
+      // If category filter is provided, strictly exclude other categories
+      if (categoryFilter && document.category.toLowerCase() !== categoryFilter.toLowerCase()) {
+        return null;
+      }
+
       const score = scoreDocument(document, queryTokens, normalizedQuery, index);
 
       if (score <= 0) {
@@ -109,6 +117,12 @@ export async function searchKnowledgeDocuments(
     .filter((result): result is SearchDocumentResult => result !== null)
     .sort((a, b) => b.score - a.score)
     .slice(0, resultLimit);
+
+  if (scoredResults.length > 0) {
+    console.log(`[Search] Top match: ${scoredResults[0].id} (${scoredResults[0].score})`);
+  } else {
+    console.log("[Search] No matches found.");
+  }
 
   const topScore = scoredResults[0]?.score ?? 0;
 
@@ -206,6 +220,57 @@ function scoreDocument(
 
   if (normalizedQuery.length > 2 && document.allText.includes(normalizedQuery)) {
     score += 12;
+  }
+
+  score += scoreIntentMatch(document, normalizedQuery);
+
+  return score;
+}
+
+function scoreIntentMatch(
+  document: IndexedDocument,
+  normalizedQuery: string,
+): number {
+  let score = 0;
+
+  if (/\badmissions?|admission process|documents?|checklist\b/.test(normalizedQuery)) {
+    score += document.category === "admissions" ? 35 : 0;
+  }
+
+  if (/\bfees?|fee structure|tuition|exam fee\b/.test(normalizedQuery)) {
+    score += document.category === "fees" ? 35 : 0;
+  }
+
+  if (/\bhostel|accommodation\b/.test(normalizedQuery)) {
+    score += document.category === "hostel" ? 35 : 0;
+  }
+
+  if (/\bplacements?|recruiters?|cpdd|career\b/.test(normalizedQuery)) {
+    score += document.category === "placements" ? 35 : 0;
+  }
+
+  if (/\bscholarships?|freeships?\b/.test(normalizedQuery)) {
+    score += document.category === "scholarships" ? 35 : 0;
+  }
+
+  if (/\bcontact|phone|email|address\b/.test(normalizedQuery)) {
+    score += document.category === "contact" ? 35 : 0;
+  }
+
+  if (
+    /\badmission\b/.test(normalizedQuery) &&
+    /\bdocuments?|checklist|required\b/.test(normalizedQuery) &&
+    /admission documents|document checklist/.test(document.allText)
+  ) {
+    score += 90;
+  }
+
+  if (
+    /\badmission\b/.test(normalizedQuery) &&
+    /\bdocuments?|checklist|required\b/.test(normalizedQuery) &&
+    /document checklist\s+-\s+10th mark sheet/.test(document.allText)
+  ) {
+    score += 150;
   }
 
   return score;
